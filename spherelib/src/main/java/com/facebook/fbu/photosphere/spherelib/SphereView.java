@@ -9,7 +9,6 @@ import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
@@ -21,17 +20,17 @@ import com.squareup.picasso.Picasso;
 import com.squareup.picasso.Target;
 
 
-public class SphereView extends View {
+public class SphereView extends View  {
     private static final int GRID_WIDTH = 30;
     private static final int GRID_HEIGHT = 30;
 
     private static final float MIN_ZOOM = 0.18f;
-    private static final float INITIAL_ZOOM = 0.4f;
+    private static final float INITIAL_ZOOM = 0.3f;
     private static final float MAX_ZOOM = 0.8f;
 
     private static final float VELOCITY_FACTOR = 4f;
     private static final float TOUCH_FRICTION = 0.0006f;
-    private static final float PREVIEW_FRICTION = 0.000005f;
+    private static final float PREVIEW_FRICTION = 0.000054f;
     private static final float PREVIEW_INITIAL_VELOCITY = 0.01f;
     private float friction = TOUCH_FRICTION;
     private float mXRotation;
@@ -45,6 +44,10 @@ public class SphereView extends View {
     private boolean mWaitNewFinger;
     private long mOldTime;
     private boolean mIsBitmapSet = false;
+    private int initialX = 1000;
+    private float rotateX = 1000;
+    private float mRotation = 0;
+
 
     public enum SphereViewMode {
         PREVIEW,
@@ -80,10 +83,10 @@ public class SphereView extends View {
         mContext = context;
         // initialize mode as preview
         mMode = SphereViewMode.PREVIEW;
-
         mOldTime = System.currentTimeMillis();
-
         mOrientationManager = new OrientationManager(mContext);
+
+
 
         mScaleGestureDetector = new ScaleGestureDetector(mContext,
                 new ScaleGestureDetector.OnScaleGestureListener() {
@@ -132,6 +135,8 @@ public class SphereView extends View {
                 });
 
 
+
+
         this.setOnTouchListener(new OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
@@ -160,11 +165,12 @@ public class SphereView extends View {
                         if (!mScaleGestureDetector.isInProgress() && !mWaitNewFinger) {
                             mXRotation -= 2 * ((event.getX() - oldX)) / getWidth();
                             float tempYRotation = mYRotation + 2 * ((event.getY() - oldY))
-                                / getHeight();
+                                    / getHeight();
                             if (Math.abs(tempYRotation) <= Math.PI / 2) {
                                 mYRotation += 2 * ((event.getY() - oldY)) / getHeight();
                             }
                         }
+
 
                         oldX = event.getX();
                         oldY = event.getY();
@@ -209,11 +215,15 @@ public class SphereView extends View {
     }
 
     @Override
-    protected  void onDetachedFromWindow() {
+    protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         mOrientationManager.stop();
     }
 
+
+    public float getXPos(){
+        return rotateX;
+    }
 
     private final Runnable mSetFrame = new Runnable() {
         public void run() {
@@ -225,12 +235,25 @@ public class SphereView extends View {
                     mSphere.rotate(mOrientationManager.getCorrectionRotMatrix());
                     break;
                 case TOUCH:
+
+
+
+                    mRotation = mXRotation;
+
+                    if (mRotation > 0 && mRotation < 4.6f)
+                        rotateX = initialX + (initialX * (mRotation / 1.45f));
+                    else if (mRotation < 0 && mRotation > -2){
+                        rotateX = initialX + (initialX * (mRotation / 1.45f));
+                    }
+
+
                     handleAnimatedCoordinates();
-                    Log.i(
-                            "info_",
-                            Integer.toString(mContext.getResources().getConfiguration()
-                                    .orientation));
-                    mSphere.rotate(mXRotation, mYRotation);
+
+                    mSphere.rotate(mXRotation, 0);
+
+                    //ROTATE X = direction
+
+                  //  Log.i("info_pixel", "X " + rotateX + "  " + mXRotation);
                     break;
                 case PREVIEW:
                     mVelocityX = PREVIEW_INITIAL_VELOCITY;
@@ -340,6 +363,9 @@ public class SphereView extends View {
         return bitmap;
     }
 
+
+
+
     private class Sphere {
         float[][][] mVertices;
         float[][][] mRotatedVertices;
@@ -409,6 +435,7 @@ public class SphereView extends View {
         // We then expand the view with the appropriate zoom factor so it fills the view
         private float[] project(float[] point) {
             float diameter = (float) Math.sqrt(getWidth() * getWidth() + getHeight() * getHeight());
+
             return new float[]{
                     mZoomFactor * diameter * point[0] / point[2],
                     mZoomFactor * diameter * point[1] / point[2]
@@ -442,6 +469,8 @@ public class SphereView extends View {
             for (int j = 0; j < mGridHeight - 1; j++) {
                 for (int i = 0; i < mGridWidth; i++) {
                     if (isEntirelyFrontal(i, j)) {
+
+
                         float[] p1 = project(mRotatedVertices[i][j]);
                         float[] p2 = project(mRotatedVertices[(i + 1) % mGridWidth][j]);
                         float[] p3 = project(mRotatedVertices[(i + 1) % mGridWidth][j + 1]);

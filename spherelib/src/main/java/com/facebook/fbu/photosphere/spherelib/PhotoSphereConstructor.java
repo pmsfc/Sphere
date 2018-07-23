@@ -27,16 +27,21 @@ public class PhotoSphereConstructor {
     private int mWidth;
     private int mHeight;
     private int mNumOfPicturesDrawn = 0;
+    private int idPictoGet = 0;
 
     private Bitmap mBitmap;
     private Canvas mCanvas;
+
+    private int countPixelInside = 0;
 
     private String mDestinationFile;
     private File mFile;
     private boolean mIsConstructionDone;
 
     // manages the drawing processes in at most two threads
-    private ExecutorService mExecutorService = Executors.newFixedThreadPool(2);
+
+
+    private ExecutorService mExecutorService = Executors.newFixedThreadPool(4);
 
     private boolean mIsFileSaved;
 
@@ -66,7 +71,6 @@ public class PhotoSphereConstructor {
 
         mBitmap = Bitmap.createBitmap(mWidth, mHeight, Bitmap.Config.ARGB_8888);
         mCanvas = new Canvas(mBitmap);
-
     }
 
     public Bitmap getBitmap() {
@@ -77,14 +81,22 @@ public class PhotoSphereConstructor {
         final Runnable mDrawPictureRunnable = new Runnable() {
             @Override
             public void run() {
-                mNumOfPicturesDrawn++;
-                drawPictureProcess(mCameraView.getPictures().get(mNumOfPicturesDrawn - 1));
-                if (mNumOfPicturesDrawn == mCameraView.getPictures().size()) {
+
+                idPictoGet++;
+                CameraView.Picture p = mCameraView.getPictures().get(idPictoGet - 1);
+                if (p != null)
+                    drawPictureProcess(p);
+
+                Log.d("images drawn", "Total processed " + mNumOfPicturesDrawn + " Total pics " + mCameraView.getPictures().size() + " Threads consuming -> " + idPictoGet);
+                if (mNumOfPicturesDrawn == mCameraView.getPictures().size() - 1) {
                     if (mDestinationFile != null) {
                         savePictureToFile();
+                        if (mIsFileSaved)
+                            mIsConstructionDone = true;
                     }
-                    mIsConstructionDone = true;
                 }
+
+
             }
         };
 
@@ -93,116 +105,130 @@ public class PhotoSphereConstructor {
 
     public void drawPictureProcess(CameraView.Picture picture) {
 
-        Rect rect = new Rect(picture.getBitmap().getWidth() / 6, picture.getBitmap().getWidth()
-                * 5 / 6, picture.getBitmap().getHeight() / 6, picture.getBitmap().getHeight()
-                - picture.getBitmap().getWidth() / 6);
+        //sometimes we get null bitmap - bug, this guard saves the day!
+        if(picture != null && picture.getBitmap() != null) {
 
 
-        int jumpSize = 15;
-        boolean moveFast = false;
-        int count = 0;
-
-        boolean gotInside;
-
-        Paint dstOverPaint = new Paint();
-        dstOverPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OVER));
-
-        Paint srcOverPaint = new Paint();
-        srcOverPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_OVER));
-
-        Paint helperPaint = new Paint();
-        helperPaint.setARGB(50, 255, 0, 0);
-
-        int color;
-        int alpha;
+            Rect rect = new Rect(picture.getBitmap().getWidth() / 6, picture.getBitmap().getWidth()
+                    * 5 / 6, picture.getBitmap().getHeight() / 6, picture.getBitmap().getHeight()
+                    - picture.getBitmap().getWidth() / 6);
 
 
-        for (int i = 0; i < mWidth; i++) {
-            for (int j = 0; j < mHeight - 1; j++) {
-                float xAngle = (float) (2 * Math.PI * (float) i / mWidth);
-                float yAngle = (float) (Math.PI * (((float) j / mHeight) - 1.0f / 2));
-                float[] pointInSphere = new float[]{
-                        (float) Math.sin(yAngle),
-                        (float) (Math.cos(xAngle) * Math.cos(yAngle)),
-                        (float) (Math.sin(xAngle) * Math.cos(yAngle))
-                };
+            int jumpSize = 15;
+            boolean moveFast = false;
+            int count = 0;
+
+            boolean gotInside;
+
+            Paint dstOverPaint = new Paint();
+            dstOverPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OVER));
+
+            Paint srcOverPaint = new Paint();
+            srcOverPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_OVER));
 
 
-                float[] rotated = MatrixUtils.multiply(
-                        pointInSphere,
-                        MatrixUtils.transpose(picture.getRotationMatrix()));
+            int color;
+            int alpha;
 
-                gotInside = rotated[2] > 0;
+            //iterate over all pixels of sphere
+            for (int i = 0; i < mWidth; i++) {
+                for (int j = 0; j < mHeight - 1; j++) {
+                    float xAngle = (float) (2 * Math.PI * (float) i / mWidth);
+                    float yAngle = (float) (Math.PI * (((float) j / mHeight) - 1.0f / 2));
+                    float[] pointInSphere = new float[]{
+                            (float) Math.sin(yAngle),
+                            (float) (Math.cos(xAngle) * Math.cos(yAngle)),
+                            (float) (Math.sin(xAngle) * Math.cos(yAngle))
+                    };
 
-                if (gotInside) {
 
-                    float[] projected = project(rotated);
+                    float[] rotated = MatrixUtils.multiply(
+                            pointInSphere,
+                            MatrixUtils.transpose(picture.getRotationMatrix()));
 
-
-                    projected[0] *= picture.getBitmap().getWidth()
-                            / picture.getAbstractWidth();
-                    projected[0] += picture.getBitmap().getWidth() / 2;
-                    projected[1] *= picture.getBitmap().getHeight()
-                            / picture.getAbstractHeight();
-                    projected[1] += picture.getBitmap().getHeight() / 2;
-
-                    gotInside = (projected[0] >= 0
-                            && projected[0] < picture.getBitmap().getWidth() - 1
-                            && projected[1] >= 0
-                            && projected[1] < picture.getBitmap().getHeight() - 1);
+                    gotInside = rotated[2] > 0;
 
                     if (gotInside) {
-                        color = picture.getBitmap().getPixel(
-                                (int) projected[0],
-                                (int) projected[1]);
 
-                        dstOverPaint.setColor(color);
-                        mCanvas.drawPoint(i, j, dstOverPaint);
+                        float[] projected = project(rotated);
 
-                        alpha = Math.max(
-                                0,
-                                255
-                                        - (255 * rect.distanceSquaredTo(
-                                        (int) projected[0],
-                                        (int) projected[1])) / (picture.getBitmap().getWidth() / 6)
-                                        / (picture.getBitmap().getWidth() / 6));
+                        projected[0] *= picture.getBitmap().getWidth()
+                                / picture.getAbstractWidth();
+                        projected[0] += picture.getBitmap().getWidth() / 2;
+                        projected[1] *= picture.getBitmap().getHeight()
+                                / picture.getAbstractHeight();
+                        projected[1] += picture.getBitmap().getHeight() / 2;
+
+                        //verifies if projected 0 & 1 are inside current picture
+                        // and if it does it will paint it
+
+                        gotInside = (projected[0] >= 0
+                                && projected[0] < picture.getBitmap().getWidth() - 1
+                                && projected[1] >= 0
+                                && projected[1] < picture.getBitmap().getHeight() - 1);
+
+                        if (gotInside) {
+
+                            //    countPixelInside++;
+
+                            //    Log.i("Pixels INSIDE", "pixels "+countPixelInside);
+
+                            color = picture.getBitmap().getPixel(
+                                    (int) projected[0],
+                                    (int) projected[1]);
+
+                            dstOverPaint.setColor(color);
+                            mCanvas.drawPoint(i, j, dstOverPaint);
+
+                            alpha = Math.max(0,
+                                    255 - (255 * rect.distanceSquaredTo(
+                                            (int) projected[0],
+                                            (int) projected[1])) / (picture.getBitmap().getWidth() / 6)
+                                            / (picture.getBitmap().getWidth() / 6));
 
 
-                        srcOverPaint.setColor(color);
-                        srcOverPaint.setAlpha(alpha);
-                        mCanvas.drawPoint(i, j, srcOverPaint);
+                            srcOverPaint.setColor(color);
+
+                            //this joins photos with alpha values Pedro
+                            srcOverPaint.setAlpha(alpha);
+
+
+                            mCanvas.drawPoint(i, j, srcOverPaint);
+                        }
+
+
+                    }
+
+
+                    if ((!moveFast) && (!gotInside)) {
+                        count++;
+                    }
+
+                    if (count > jumpSize + 1) {
+                        count = 0;
+                        moveFast = true;
+                    }
+
+                    if (moveFast && gotInside) {
+                        moveFast = false;
+                        j = Math.max(j - jumpSize, 0);
+                    }
+
+                    if (moveFast) {
+                        j = j + jumpSize;
                     }
 
 
                 }
-
-
-                if ((!moveFast) && (!gotInside)) {
-                    count++;
-                }
-
-                if (count > jumpSize + 1) {
-                    count = 0;
-                    moveFast = true;
-                }
-
-                if (moveFast && gotInside) {
-                    moveFast = false;
-                    j = Math.max(j - jumpSize, 0);
-                }
-
-                if (moveFast) {
-                    j = j + jumpSize;
-                }
-
-
             }
+            mNumOfPicturesDrawn++;
+
         }
     }
 
     public void savePictureToFile() {
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        mBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
+        mBitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
         byte[] data = stream.toByteArray();
         try {
             mFile = getNewFile(mDestinationFile);
@@ -217,8 +243,12 @@ public class PhotoSphereConstructor {
         mIsFileSaved = true;
     }
 
-    public float requestProgress() {
-        return (float) mNumOfPicturesDrawn / mCameraView.getPictures().size();
+    public int requestProgress() {
+        return  mNumOfPicturesDrawn * 100 / mCameraView.getPictures().size();
+    }
+
+    public int picturesTaken() {
+        return mCameraView.getPictures().size();
     }
 
 
@@ -228,7 +258,7 @@ public class PhotoSphereConstructor {
 
     private File getNewFile(String fileName) {
         File mediaStorageDir = new File(Environment.getExternalStoragePublicDirectory(
-                Environment.DIRECTORY_PICTURES), mCameraView.getContext().getPackageName());
+                Environment.DIRECTORY_PICTURES), mCameraView.getContext().getPackageName()+File.separator+"PhotoSpheres");
 
         if (!mediaStorageDir.exists()) {
             if (!mediaStorageDir.mkdirs()) {
@@ -237,8 +267,7 @@ public class PhotoSphereConstructor {
             }
         }
 
-        return new File(mediaStorageDir.getPath() + File.separator +
-                "IMG_" + fileName + ".jpg");
+        return new File(fileName);
     }
 
     private class Rect {

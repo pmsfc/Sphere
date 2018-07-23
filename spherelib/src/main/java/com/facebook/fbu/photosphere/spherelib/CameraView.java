@@ -3,6 +3,7 @@
 package com.facebook.fbu.photosphere.spherelib;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
@@ -13,6 +14,7 @@ import android.graphics.PorterDuffXfermode;
 import android.graphics.drawable.Drawable;
 import android.hardware.Camera;
 import android.os.Vibrator;
+import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
@@ -40,9 +42,9 @@ public class CameraView extends View {
         CLOSE_TO_POLE
     }
 
-    private static final int DEFAULT_SPHERE_HEIGHT = 1000;
-    private static final float ZOOM_FACTOR = 0.35f;
-    private static final double MAXIMUM_ALLOWED_DEVICE_ROTATION = Math.PI / 20;
+    private static int DEFAULT_SPHERE_HEIGHT;
+    private static final float ZOOM_FACTOR = 0.30f; //cannot be changed or pictures go outside screen
+    private static final double MAXIMUM_ALLOWED_DEVICE_ROTATION = Math.PI / 30;
 
     private final List<Picture> mPictures = new ArrayList<Picture>();
     private final List<ReferencePoint> mReferencePoints = new ArrayList<ReferencePoint>();
@@ -57,7 +59,7 @@ public class CameraView extends View {
     private float mViewDiameter;
 
     private Paint mPaint = new Paint();
-    
+
     private boolean mIsPaused;
 
     private long mAlignmentAnimationOldTime;
@@ -77,6 +79,9 @@ public class CameraView extends View {
 
     public CameraView(Context context) {
         super(context);
+
+        SharedPreferences settings = context.getSharedPreferences("UserInfo", 0);
+        DEFAULT_SPHERE_HEIGHT = settings.getInt("sphereH", 2048);
 
         mOrientationManager = new OrientationManager(context);
         mCameraController = CameraController.getNewInstance(
@@ -134,13 +139,13 @@ public class CameraView extends View {
             }, 0.13f, 1f));
         }
 
-        mPictureFrame = getResources().getDrawable(R.drawable.picture_frame);
-        mReferencePointDrawable = getResources().getDrawable(R.drawable.camera_view_dot);
-        mReferencePointFadeDrawable = getResources().getDrawable(R.drawable.camera_view_dot_fade);
-        mReferenceCircleDrawable = getResources().getDrawable(R.drawable.reference_circle);
+        mPictureFrame = ContextCompat.getDrawable(getContext(), R.drawable.picture_frame);
+        mReferencePointDrawable = ContextCompat.getDrawable(getContext(), R.drawable.camera_view_dot);
+        mReferencePointFadeDrawable = ContextCompat.getDrawable(getContext(), R.drawable.camera_view_dot_fade);
+        mReferenceCircleDrawable = ContextCompat.getDrawable(getContext(), R.drawable.reference_circle);
 
-        mTurnLeftDrawable = getResources().getDrawable(R.drawable.rotateleft);
-        mTurnRightDrawable = getResources().getDrawable(R.drawable.rotateright);
+        mTurnLeftDrawable = ContextCompat.getDrawable(getContext(), R.drawable.rotateleft);
+        mTurnRightDrawable = ContextCompat.getDrawable(getContext(), R.drawable.rotateright);
 
 
     }
@@ -163,23 +168,23 @@ public class CameraView extends View {
                 * Math.PI / 180 / 2));
         float abstractHeight = (float) Math.tan((mCameraController.getCameraParams().getHorizontalViewAngle()
                 * Math.PI / 180 / 2));
-        mFrameLeft = (int) (getWidth() / 2 - abstractWidth * ZOOM_FACTOR * mViewDiameter);
-        mFrameRight = (int) (getWidth() / 2 + abstractWidth * ZOOM_FACTOR * mViewDiameter);
-        mFrameBottom = (int) (getHeight() / 2 + abstractHeight * ZOOM_FACTOR * mViewDiameter);
-        mFrameTop = (int) (getHeight() / 2 - abstractHeight * ZOOM_FACTOR * mViewDiameter);
+        mFrameLeft = (int) (getMeasuredWidth() / 2 - abstractWidth * ZOOM_FACTOR * mViewDiameter);
+        mFrameRight = (int) (getMeasuredWidth() / 2 + abstractWidth * ZOOM_FACTOR * mViewDiameter);
+        mFrameBottom = (int) (getMeasuredHeight() / 2 + abstractHeight * ZOOM_FACTOR * mViewDiameter);
+        mFrameTop = (int) (getMeasuredHeight() / 2 - abstractHeight * ZOOM_FACTOR * mViewDiameter);
         mPictureFrame.setBounds(mFrameLeft, mFrameTop, mFrameRight, mFrameBottom);
 
         mReferenceCircleDrawable.setBounds(
-                (int) (getWidth() / 2 - getResources().getDimension(R.dimen.outer_circle_radius)),
-                (int) (getHeight() / 2 - getResources().getDimension(R.dimen.outer_circle_radius)),
-                (int) (getWidth() / 2 + getResources().getDimension(R.dimen.outer_circle_radius)),
-                (int) (getHeight() / 2 + getResources().getDimension(R.dimen.outer_circle_radius)));
+                (int) (getMeasuredWidth() / 2 - getResources().getDimension(R.dimen.outer_circle_radius)),
+                (int) (getMeasuredHeight() / 2 - getResources().getDimension(R.dimen.outer_circle_radius)),
+                (int) (getMeasuredWidth() / 2 + getResources().getDimension(R.dimen.outer_circle_radius)),
+                (int) (getMeasuredHeight() / 2 + getResources().getDimension(R.dimen.outer_circle_radius)));
 
 
         int rotateIconSize = (int) getResources().getDimension(R.dimen.rotate_icon_size);
         int rotateIconMargin = (int) getResources().getDimension(R.dimen.rotate_icon_margin);
 
-        mTurnLeftDrawable.setBounds(getWidth() - rotateIconSize - rotateIconMargin, rotateIconMargin, getWidth() - rotateIconMargin, rotateIconSize + rotateIconMargin);
+        mTurnLeftDrawable.setBounds(getMeasuredWidth() - rotateIconSize - rotateIconMargin, rotateIconMargin, getMeasuredWidth() - rotateIconMargin, rotateIconSize + rotateIconMargin);
         mTurnRightDrawable.setBounds(rotateIconMargin, rotateIconMargin, rotateIconSize + rotateIconMargin, rotateIconSize + rotateIconMargin);
     }
 
@@ -225,19 +230,38 @@ public class CameraView extends View {
         }
     };
 
+
+    public Bitmap getResizedBitmap(Bitmap bm, int newWidth, int newHeight) {
+        int width = bm.getWidth();
+        int height = bm.getHeight();
+        float scaleWidth = ((float) newWidth) / width;
+        float scaleHeight = ((float) newHeight) / height;
+        // CREATE A MATRIX FOR THE MANIPULATION
+        Matrix matrix = new Matrix();
+        // RESIZE THE BIT MAP
+        matrix.postScale(scaleWidth, scaleHeight);
+
+        // "RECREATE" THE NEW BITMAP
+        Bitmap resizedBitmap = Bitmap.createBitmap(
+                bm, 0, 0, width, height, matrix, false);
+        return resizedBitmap;
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
         // updates the diameter, in case there were changes
-        mViewDiameter = (float) Math.sqrt(getWidth() * getWidth() + getHeight() * getHeight());
+        mViewDiameter = (float) Math.sqrt(getMeasuredWidth() * getMeasuredWidth() + getMeasuredHeight() * getMeasuredHeight());
 
         // sets the background to transparent
         canvas.drawColor(0, PorterDuff.Mode.CLEAR);
 
         for (Picture pic : mPictures) {
+
             if (pic.isSaved()) {
                 pic.draw(canvas);
+
             }
         }
 
@@ -252,23 +276,26 @@ public class CameraView extends View {
 
         mReferenceCircleDrawable.draw(canvas);
 
-        mPictureFrame.draw(canvas);
 
         handleAlignmentAnimation(canvas);
 
         // sets the background color to a light grey
         canvas.drawColor(getResources().getColor(R.color.light_grey), PorterDuff.Mode.DST_OVER);
+
+        mPictureFrame.draw(canvas);
+
     }
 
     // these are the reference point (circles) on the screen that tell the user where to take
     // each picture
     public class ReferencePoint {
-        private static final int HOVER_TIME_TO_CAPTURE = 500;
+        private static final int HOVER_TIME_TO_CAPTURE = 200;
 
         private float[] mCoordinates;
         private boolean mIsPictureTaken; // whether the picture associated to this point has been
         private int mFramesInside; // counts the number of frames the user has been aiming this point
         private long mInitHoverTime;
+        ReferencePoint me = this;
 
         private PointType mType;
 
@@ -305,12 +332,12 @@ public class CameraView extends View {
                 }
                 mFramesInside++;
 
-                // after 30 frames aiming the point, we take a picture
+
                 if (System.currentTimeMillis() > mInitHoverTime + HOVER_TIME_TO_CAPTURE) {
                     mIsPictureTaken = true;
-                    Log.i("info_", "taking picutre from " + Float.toString(mCoordinates[2]));
-                    mVibrator.vibrate(20);
-                    mPictures.add(mCameraController.takePicture("muito showz man", this));
+                    CameraView.Picture photo = mCameraController.takePicture("photosphere", me);
+                    mPictures.add(photo);
+                    mVibrator.vibrate(10);
                 }
 
             } else {
@@ -495,6 +522,15 @@ public class CameraView extends View {
         private float[][] mRotationMatrix;
 
         private boolean mIsSaved = false;
+        private boolean isSerrada = false;
+
+        public boolean isSerrada() {
+            return isSerrada;
+        }
+
+        public void setSerrada(boolean serrada) {
+            isSerrada = serrada;
+        }
 
         private float mAbstractWidth, mAbstractHeight;
         private float[][] mVertices;
@@ -612,11 +648,6 @@ public class CameraView extends View {
                 }
             }
 
-            if (Math.random() < 1.0 / 60) {
-                Log.i("info__", Float.toString(rotatedVertices[0][0]) + ", " +
-                        Float.toString(rotatedVertices[0][1]) + ", " +
-                        Float.toString(rotatedVertices[0][2]));
-            }
 
             // draws the quadrangular bitmap onto the quadrangle that the rotated vertices form
             if (isFrontal(currentRotation)) {// we reuse the same Matrix object to draw every rectangle
@@ -740,7 +771,7 @@ public class CameraView extends View {
         } else {
             mRightAlpha = Math.max(
                     0,
-                    mRightAlpha - (int) (0.3 * Math.min(System.currentTimeMillis() - mAlignmentAnimationOldTime, 150)));
+                    mRightAlpha - (int) (0.2 * Math.min(System.currentTimeMillis() - mAlignmentAnimationOldTime, 150)));
         }
 
         if (getCurrentDeviceAlignment() == DeviceAlignment.LEFT) {
@@ -750,7 +781,7 @@ public class CameraView extends View {
         } else {
             mLeftAlpha = Math.max(
                     0,
-                    mLeftAlpha - (int) (0.3 * Math.min(System.currentTimeMillis() - mAlignmentAnimationOldTime, 150)));
+                    mLeftAlpha - (int) (0.2 * Math.min(System.currentTimeMillis() - mAlignmentAnimationOldTime, 150)));
         }
 
         mTurnLeftDrawable.setAlpha(mRightAlpha);
